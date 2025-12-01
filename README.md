@@ -25,63 +25,110 @@ mysql -u root -p < server/schema.sql
 
  - **Start server**:
 
+# To‑Do List (Vite + React)
+
+Proyecto ejemplo: una aplicación To‑Do con frontend en React (Vite) y dos alternativas de backend (Node/Express o FastAPI en Python). La base de datos es MySQL y se gestiona desde MySQL Workbench o un servicio externo (Railway, Render, etc.).
+
+Servidor (Node/Express)
+
+- **Instalar dependencias del servidor**: abre PowerShell en `server` y ejecuta:
+
+```powershell
+cd server
+npm install
+```
+
+- **Crear la base de datos y la tabla**: ejecuta el script SQL `server/schema.sql` en tu servidor MySQL. Ejemplo con el cliente `mysql`:
+
+```powershell
+mysql -u root -p < server\schema.sql
+```
+
+- **Configurar la conexión** (opcional): puedes usar variables de entorno `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`. Valores por defecto: `127.0.0.1`, `root`, `''`, `todo_db`.
+
+- **Iniciar el servidor**:
+
 ```powershell
 cd server
 npm start
 ```
 
-The server exposes the REST API at `http://localhost:4000/api/tasks`.
+El servidor Node/Express expone la API REST en `http://localhost:4000/api/tasks`.
 
-Frontend
+Frontend (Vite + React)
 
- - Start the Vite frontend as usual:
+- Inicia el frontend en desarrollo:
 
 ```powershell
 npm install
 npm run dev
 ```
 
-MySQL Workbench (how to apply `server/schema.sql`)
+- La app usa `import.meta.env.VITE_API_BASE` como URL base para la API. En desarrollo el `.env` raíz contiene `VITE_API_BASE=http://localhost:8000` (por defecto apuntando al backend FastAPI). Si prefieres usar el servidor Node, cambia a `http://localhost:4000`.
 
- - Open **MySQL Workbench** and connect to your MySQL server.
- - In the SQL Editor, either open `server/schema.sql` (File → Open SQL Script...) or copy the file contents and paste into a new query tab.
- - Execute the script (click the lightning bolt / "Execute" button). This will create the `todo_db` database and the `tasks` table.
+MySQL Workbench (ejecutar `server/schema.sql`)
 
-Using a `.env` file with this project
+- Abre **MySQL Workbench** y conéctate a tu servidor.
+- Abre `server/schema.sql` (File → Open SQL Script...) o pega su contenido en una nueva pestaña de consulta.
+- Ejecuta el script (botón "Execute"). Esto crea la base `todo_db` y la tabla `tasks`.
 
- - Copy `server/.env.example` to `server/.env` and fill your MySQL credentials (the values used by Workbench).
- - Alternatively you can export environment variables in PowerShell before starting the server. Example:
+Uso de `.env`
 
-```powershell
-$env:MYSQL_HOST='127.0.0.1'; $env:MYSQL_USER='root'; $env:MYSQL_PASSWORD='mypassword'; $env:MYSQL_DATABASE='todo_db'
-npm start
-```
+- Copia `server/.env.example` a `server/.env` y completa tus credenciales si usas el servidor Node.
+- Copia `backend/.env.example` a `backend/.env` y completa las credenciales si vas a usar FastAPI.
+- No subas archivos `.env` al repositorio; usa Secrets en GitHub, Railway y Render.
 
- - If you use the `.env` file approach, the server will automatically load it (the project includes `dotenv`).
+FastAPI (backend en Python)
 
-FastAPI backend (alternative)
-
- - I added a Python FastAPI backend in `backend/` that also exposes the same REST endpoints at `/api/tasks`.
- - It uses SQLAlchemy and connects to your MySQL database via `backend/.env` (copy from `backend/.env.example`).
- - To run the FastAPI backend:
+- En `backend/` hay una alternativa en FastAPI que expone los mismos endpoints (`/api/tasks`). Actualmente el backend usa `pymysql` para consultas directas a MySQL (sin ORM) para evitar problemas de compatibilidad en el entorno local.
+- Para ejecutar el backend locally:
 
 ```powershell
 cd backend
+# (recomendado) crea y activa un virtualenv
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-# create backend/.env from backend/.env.example and fill credentials (use the same Workbench values)
 uvicorn backend.main:app --reload --port 8000
 ```
 
- - The FastAPI server will be available at `http://localhost:8000/api/tasks`.
- - Note: I intentionally do not auto-create the `tasks` table from this app because you said you wanted to manage the DB in Workbench — make sure the `todo_db` and `tasks` table exist (run `server/schema.sql` in Workbench).
+- El backend FastAPI quedará en `http://localhost:8000/api/tasks`.
 
+Despliegue (resumen rápido)
 
+- Frontend: GitHub Pages con GitHub Actions (build de Vite → publicar `dist/`).
+- Base de datos: Railway (provisionar MySQL, ejecutar `server/schema.sql`).
+- Backend: Render (conectar repo, configurar variables de entorno con las credenciales de Railway, start command con `gunicorn`/`uvicorn`).
 
+Problemas y dificultades que encontramos
+------------------------------------
 
-## React Compiler
+Durante el desarrollo surgieron varias dificultades que conviene documentar y que ya resolvimos o mitigamos:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Migración SQLite → MySQL: al inicio se creó lógica para inicializar SQLite desde JS. El usuario pidió MySQL y gestionar la DB desde Workbench, así que eliminamos la creación automática en JavaScript y añadimos `server/schema.sql` para ejecutar manualmente la migración en MySQL.
 
-## Expanding the ESLint configuration
+- Configuración con MySQL Workbench: para facilitar el uso con Workbench añadimos `server/.env.example` y `backend/.env.example` y documentamos cómo pegar/ejecutar `server/schema.sql` desde la interfaz de Workbench.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Pydantic y SQLAlchemy incompatibles: al instalar dependencias en Python aparecieron conflictos entre versiones de Pydantic y algunas librerías. Para evitar problemas con Python 3.13 y compatibilidades cambiamos la implementación del backend a consultas directas con `pymysql` en lugar de usar SQLAlchemy/ORM.
+
+- Errores de imports en FastAPI (módulo no encontrado / relative import): al ejecutar `uvicorn` surgieron errores de importación por la forma de lanzar el servidor desde la raíz o desde dentro de `backend/`. Para resolverlo añadimos `backend/__init__.py` y adaptamos `main.py` para intentar imports absolutos y caer a imports relativos cuando sea necesario, de forma que `uvicorn backend.main:app` y `uvicorn main:app` funcionen en distintos entornos.
+
+- `process` no definido en el navegador: Vite no expone `process.env` en el cliente. Cambiamos el frontend para usar `import.meta.env.VITE_API_BASE` y añadimos `.env` en la raíz con `VITE_API_BASE=http://localhost:8000` para apuntar al backend FastAPI en desarrollo.
+
+- CORS y puertos: durante pruebas la app mostró `ERR_CONNECTION_REFUSED` cuando el backend no estaba activo o usábamos el puerto equivocado. Para evitar esto:
+	- el backend tiene middleware CORS habilitado (temporalmente `allow_origins=["*"]`) para desarrollo;
+	- documentamos los puertos usados (FastAPI: 8000, Node/Express: 4000, Vite: 5173) y cómo cambiarlos si es necesario.
+
+Recomendaciones finales
+----------------------
+
+- Usa Secrets en GitHub y variables de entorno en Render/Railway en lugar de `.env` en repositorios.
+- Si vas a usar producción, considera restringir CORS a tu dominio y usar un ORM robusto con migraciones (`Alembic` / `Flask-Migrate`) en lugar de crear tablas manualmente.
+- Si quieres, puedo:
+	- Crear el workflow de GitHub Actions para desplegar a GitHub Pages.
+	- Preparar los pasos exactos para desplegar la DB en Railway y el backend en Render (incluyendo comandos a ejecutar y variables a configurar).
+
+---
+
+Si quieres que aplique alguno de los despliegues automáticos ahora (por ejemplo crear `.github/workflows/gh-pages.yml` listo para publicar), dime el nombre del repositorio o si vas a publicar en `/<repo>/` y lo configuro.
