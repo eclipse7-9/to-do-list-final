@@ -1,0 +1,106 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import os
+
+# Support both running as a package (uvicorn backend.main:app) and as a module
+try:
+    from backend import schemas
+    from backend.database import get_conn
+except Exception:
+    import schemas
+    from database import get_conn
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get('/api/tasks', response_model=list[schemas.TaskOut])
+def list_tasks():
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT id, title, completed, created_at, updated_at FROM tasks ORDER BY id DESC')
+            rows = cur.fetchall()
+            for r in rows:
+                r['completed'] = bool(r.get('completed', 0))
+            return rows
+    finally:
+        conn.close()
+
+
+@app.post('/api/tasks', response_model=schemas.TaskOut, status_code=201)
+def create_task(payload: schemas.TaskCreate):
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail='Title required')
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('INSERT INTO tasks (title) VALUES (%s)', (title,))
+            last_id = cur.lastrowid
+        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute('SELECT id, title, completed, created_at, updated_at FROM tasks WHERE id = %s', (last_id,))
+            row = cur.fetchone()
+            row['completed'] = bool(row.get('completed', 0))
+            return row
+    finally:
+        conn.close()
+
+
+@app.put('/api/tasks/{task_id}', response_model=schemas.TaskOut)
+def update_task(task_id: int, payload: schemas.TaskUpdate):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            # check exists
+            cur.execute('SELECT id FROM tasks WHERE id = %s', (task_id,))
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=404, detail='Not found')
+            parts = []
+            values = []
+            if payload.title is not None:
+                parts.append('title = %s')
+                values.append(payload.title.strip())
+            if payload.completed is not None:
+                parts.append('completed = %s')
+                values.append(1 if payload.completed else 0)
+            if parts:
+                sql = 'UPDATE tasks SET ' + ', '.join(parts) + ' WHERE id = %s'
+                values.append(task_id)
+                cur.execute(sql, tuple(values))
+                conn.commit()
+            cur.execute('SELECT id, title, completed, created_at, updated_at FROM tasks WHERE id = %s', (task_id,))
+            row = cur.fetchone()
+            row['completed'] = bool(row.get('completed', 0))
+            return row
+    finally:
+        conn.close()
+
+
+@app.delete('/api/tasks/{task_id}')
+def delete_task(task_id: int):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('DELETE FROM tasks WHERE id = %s', (task_id,))
+            affected = cur.rowcount
+            conn.commit()
+            if affected == 0:
+                raise HTTPException(status_code=404, detail='Not found')
+            return {"success": True}
+    finally:
+        conn.close()
+
+
+if __name__ == '__main__':
+    import uvicorn
+    port = int(os.getenv('PORT', 8000))
+    uvicorn.run('backend.main:app', host='0.0.0.0', port=port, reload=True)
